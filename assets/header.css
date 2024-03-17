@@ -1,0 +1,8 @@
+body {
+    background-color: rgb(56, 57, 56);
+}
+
+:root {
+    --secondary-bg-color: rgb(129, 132, 130);
+    --sidebar-color: rgb(67, 70, 67);
+}
