@@ -25,6 +25,10 @@ num_tracks = 7
 
 num_elements = num_tracks * 4 + 1
 
+# Set interval time (s)
+interval_time = 10
+sample_rate = 44100
+
 navbar = dbc.NavbarSimple(
     children=[
         dbc.Button("Config", outline=True, color="secondary", className="mr-1", id="btn_sidebar"),
@@ -129,9 +133,16 @@ def add_arrays(a, b):
     return result
 
 
-def modify_sound(sound, pitch_factor, pan_factors):
+def modify_sound(sound, pitch_factor, pan_factors, start_index):
     # load the sound into an array
-    snd_array = pygame.sndarray.array(sound)
+    orig_array = pygame.sndarray.array(sound)
+    
+    # Get a x second clip from the start index
+    
+    # We want our end index to "wrap around"
+    indices = (np.arange(start_index, start_index + interval_time*sample_rate) % orig_array.shape[0]).astype(int)
+    snd_array = orig_array[indices,:]
+    end_index = indices[-1]
 
     # New length of the first dimension
     new_length = int(snd_array.shape[0] * pitch_factor)
@@ -148,21 +159,21 @@ def modify_sound(sound, pitch_factor, pan_factors):
         interp_func = interp1d(original_indices, snd_array[:, i], kind='linear')
         resampled_array[:, i] = interp_func(new_indices) * pan_factors[i]
     
-    return resampled_array
+    return resampled_array, end_index
 
 # Function to play music - placeholder for your actual implementation
-def play_music(probs):
+def play_music(probs, starting_indices):
+    end_indices = starting_indices
     new_sounds = orig_sounds
     accumulator_array = []
     sample_interval = int(probs[0]*10) #ms
-    sample_rate = 44100
     for i in range(num_tracks):
         selector_random = probs[i*4+1] * 10
-        if selector_random > 0.2:
+        if selector_random > 0.01:
             pitch_factor = probs[i*4+2] * 40
             left_factor = probs[i*4+3] * 10
             right_factor = probs[i*4+4] * 10
-            new_sound = modify_sound(new_sounds[i],pitch_factor = pitch_factor, pan_factors=[left_factor, right_factor])
+            new_sound, end_indices[i] = modify_sound(new_sounds[i],pitch_factor = pitch_factor, pan_factors=[left_factor, right_factor], start_index = starting_indices[i])
             if len(accumulator_array) == 0:
                 accumulator_array = new_sound
             else:
@@ -170,8 +181,7 @@ def play_music(probs):
     rand_name = str(uuid1())
     filename = f"assets/{rand_name}Hz.wav"
     sf.write(filename,  accumulator_array, sample_rate)
-    print(filename)
-    return filename
+    return filename, end_indices
     
     
 sidebar = html.Div(
@@ -235,6 +245,7 @@ content = html.Div(
     style=CONTENT_STYLE,
     children = [
             dcc.Store(id = 'coil-probs-store'),
+            dcc.Store(id = 'starting-index-store'),
             dbc.Button('Begin Analysis', id='play-button', n_clicks=0, style = {'margin': '10px', 'backgroundColor':'green', 'borderColor':'darkgreen'}),
             dbc.Button('Stop Analysis', id='stop-button', n_clicks=0, style = {'margin': '10px', 'backgroundColor':'red', 'borderColor':'darkred'}),
             dcc.Graph(id='live-update-graph'),
@@ -246,7 +257,7 @@ content = html.Div(
             ),
             dcc.Interval(
                 id='interval-component',
-                interval=10*1000,  # in milliseconds
+                interval=interval_time*1000,  # in milliseconds
                 n_intervals=0
             )
         ]
@@ -414,11 +425,19 @@ def step_coil(n, data):
     
 # Callback to play audio
 @app.callback(Output("audio-player", "src"),
-              Input('coil-probs-store', 'data'))
-def update_audio(data):
+              Output('starting-index-store', 'data'),
+              Input('coil-probs-store', 'data'),
+              State('starting-index-store', 'data'))
+def update_audio(data, starting_indices):
+    if starting_indices is None:
+        starting_indices = np.zeros(num_tracks)
     datasel = data[-1]
     print(datasel)
-    return play_music(datasel)
+    
+    filename, end_indices = play_music(datasel, starting_indices)
+    print(filename)
+    print(end_indices)
+    return filename, end_indices
 
 # Callback to update the timeseries plot
 @app.callback(Output('live-update-graph', 'figure'),
