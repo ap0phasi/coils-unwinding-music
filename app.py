@@ -12,9 +12,10 @@ from flask import Flask
 import time
 import plotly.graph_objs as go
 from scipy.interpolate import interp1d
+import soundfile as sf
 
-# coil setup
-from coilspy import ComplexCoil
+from uuid import uuid1
+
 
 # Dash app setup
 server = Flask(__name__)
@@ -34,6 +35,10 @@ navbar = dbc.NavbarSimple(
     dark=True,
     fluid=True,
 )
+
+# coil setup
+from coilspy import ComplexCoil
+
 
 # the style arguments for the sidebar. We use position:fixed and a fixed width
 SIDEBAR_STYLE = {
@@ -95,6 +100,34 @@ pygame.mixer.init()
 # Load the WAV files
 orig_sounds = [pygame.mixer.Sound(f"files/{i+1}.wav") for i in range(num_tracks)]
 
+def add_arrays(a, b):
+    """
+    Adds two numpy arrays, ensuring the result has the shape of the larger array.
+    The arrays must be compatible for addition in their trailing dimensions.
+    
+    Parameters:
+    - a, b: Input arrays to be added.
+    
+    Returns:
+    - A new array with the shape of the larger input array containing the sum of the inputs.
+    """
+    # Determine the larger array (prioritize 'a' if sizes are equal)
+    larger, smaller = (a, b) if a.size >= b.size else (b, a)
+    
+    # Initialize result array with the shape and type of the larger array
+    result = np.zeros_like(larger)
+    
+    # Compute slicing indices for the smaller array to match its size
+    # Assume the smaller array can be "broadcast" from its first dimension
+    slices = tuple(slice(None, dim) for dim in smaller.shape)
+    
+    # Add the smaller array to the corresponding slice of the larger array
+    result[slices] += smaller
+    # Add the rest of the larger array
+    result += larger
+    
+    return result
+
 
 def modify_sound(sound, pitch_factor, pan_factors):
     # load the sound into an array
@@ -114,29 +147,31 @@ def modify_sound(sound, pitch_factor, pan_factors):
     for i in range(snd_array.shape[1]):
         interp_func = interp1d(original_indices, snd_array[:, i], kind='linear')
         resampled_array[:, i] = interp_func(new_indices) * pan_factors[i]
-
-    snd_out = pygame.sndarray.make_sound(resampled_array)
     
-    return snd_out
+    return resampled_array
 
 # Function to play music - placeholder for your actual implementation
 def play_music(probs):
     new_sounds = orig_sounds
+    accumulator_array = []
     sample_interval = int(probs[0]*10) #ms
+    sample_rate = 44100
     for i in range(num_tracks):
         selector_random = probs[i*4+1] * 10
         if selector_random > 0.2:
             pitch_factor = probs[i*4+2] * 40
-            left_factor = probs[i*4+3] * 30
-            right_factor = probs[i*4+4] * 30
+            left_factor = probs[i*4+3] * 10
+            right_factor = probs[i*4+4] * 10
             new_sound = modify_sound(new_sounds[i],pitch_factor = pitch_factor, pan_factors=[left_factor, right_factor])
-            new_sound.play()
-    time.sleep(sample_interval / 1000.0)  # Convert ms to seconds for sleep
-        
-# Function to start music in a separate thread to avoid blocking
-def start_music(probs):
-    music_thread = threading.Thread(target=play_music(probs), daemon=True)
-    music_thread.start()
+            if len(accumulator_array) == 0:
+                accumulator_array = new_sound
+            else:
+                accumulator_array = add_arrays(accumulator_array, new_sound)
+    rand_name = str(uuid1())
+    filename = f"assets/{rand_name}Hz.wav"
+    sf.write(filename,  accumulator_array, sample_rate)
+    print(filename)
+    return filename
     
     
 sidebar = html.Div(
@@ -203,9 +238,15 @@ content = html.Div(
             dbc.Button('Begin Analysis', id='play-button', n_clicks=0, style = {'margin': '10px', 'backgroundColor':'green', 'borderColor':'darkgreen'}),
             dbc.Button('Stop Analysis', id='stop-button', n_clicks=0, style = {'margin': '10px', 'backgroundColor':'red', 'borderColor':'darkred'}),
             dcc.Graph(id='live-update-graph'),
+            html.Audio(
+                id="audio-player",
+                autoPlay=True,
+                controls=True,
+                style={'width': '100%'}
+            ),
             dcc.Interval(
                 id='interval-component',
-                interval=1*1000,  # in milliseconds
+                interval=10*1000,  # in milliseconds
                 n_intervals=0
             )
         ]
@@ -214,6 +255,7 @@ content = html.Div(
 app.layout = html.Div(
     [
         dcc.Store(id='side_click'),
+        html.Div(id="dummy", style={'display': 'none'}),
         dcc.Location(id="url"),
         navbar,
         sidebar,
@@ -367,13 +409,16 @@ def step_coil(n, data):
         probs = user_coil.get_prob().numpy()
         
         accumulated_data = np.vstack([data, probs])
-        
-        # Run the music
-        if data_orig is not None:
-            play_music(probs)
 
         return accumulated_data
     
+# Callback to play audio
+@app.callback(Output("audio-player", "src"),
+              Input('coil-probs-store', 'data'))
+def update_audio(data):
+    datasel = data[-1]
+    print(datasel)
+    return play_music(datasel)
 
 # Callback to update the timeseries plot
 @app.callback(Output('live-update-graph', 'figure'),
@@ -402,4 +447,4 @@ def update_graph_live(data):
     return fig
 
 if __name__ == "__main__":
-    app.run_server(debug=True, port=8086)
+     app.run_server(debug=False, port = 8086)
