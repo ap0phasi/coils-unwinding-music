@@ -40,12 +40,6 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
     && rm requirements.txt
 
-# For pygame
-RUN apt update
-RUN apt-get install -y libglib2.0-0 libsm6 libxrender1 libxext6
-RUN apt-get install -y libsdl1.2-dev libsdl-image1.2-dev libsdl-mixer1.2-dev libsdl-ttf2.0-dev
-RUN apt-get install -y alsa-base alsa-utils
-
 COPY app.py .
 COPY assets assets
 COPY files files

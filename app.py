@@ -171,8 +171,10 @@ def play_music(probs, starting_indices):
         selector_random = probs[i*4+1] * 10
         if selector_random > 0.01:
             pitch_factor = probs[i*4+2] * 40
-            left_factor = probs[i*4+3] * 10
-            right_factor = probs[i*4+4] * 10
+            left_factor = probs[i*4+3] * 20
+            right_factor = probs[i*4+4] * 20
+            # Idea for envelope filter: low pass filter 
+            # Maybe add a compressor
             new_sound, end_indices[i] = modify_sound(new_sounds[i],pitch_factor = pitch_factor, pan_factors=[left_factor, right_factor], start_index = starting_indices[i])
             if len(accumulator_array) == 0:
                 accumulator_array = new_sound
@@ -258,7 +260,8 @@ content = html.Div(
             dcc.Interval(
                 id='interval-component',
                 interval=interval_time*1000,  # in milliseconds
-                n_intervals=0
+                n_intervals=0,
+                disabled = False
             )
         ]
     )
@@ -385,24 +388,19 @@ def generate_coil(n_clicks,
         
         return "Coil Generated"
     
-# Callback to handle music control
-@app.callback(
-    Output('interval-component', 'disabled'),
-    Input('play-button', 'n_clicks'),
-    Input('stop-button', 'n_clicks')
-)
-def control_music(play_clicks, stop_clicks):
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        button_id = 'No clicks yet'
+@app.callback(Output("interval-component", "children"), 
+              Input("play-button", "n_clicks"),
+               Input("stop-button", "n_clicks"),
+            )
+def start_interval(n_clicks, stop_clicks):
+    if n_clicks - stop_clicks > 1:
+        n_clicks = stop_clicks + 1
+    if n_clicks > 0 and stop_clicks == None :
+        return dcc.Interval(id="interval-component", interval= interval_time * 1000, disabled= False)
+    if stop_clicks > 0:
+        return "No timer"
     else:
-        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-    if button_id == 'play-button':
-        return False
-    elif button_id == 'stop-button':
-        return True
-    return True
+        return "Not yet started"
 
 # Callback to step through coils
 @app.callback(Output('coil-probs-store', 'data'),
@@ -463,6 +461,11 @@ def update_graph_live(data):
                     plot_bgcolor = 'rgb(129, 132, 130)',
                     paper_bgcolor = 'rgb(129, 132, 130)'
                     )
+
+    fig.update_xaxes(
+        range=[0,100],  # sets the range of xaxis
+        constrain="domain",  # meanwhile compresses the xaxis by decreasing its "domain"
+    )
     return fig
 
 if __name__ == "__main__":
