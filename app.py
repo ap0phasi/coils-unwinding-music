@@ -5,7 +5,7 @@ import dash_html_components as html
 from dash.dependencies import Input, Output, State
 import dash_daq as daq
 from flask import Flask
-import pygame
+
 import numpy as np
 import threading
 from flask import Flask
@@ -13,9 +13,11 @@ import time
 import plotly.graph_objs as go
 from scipy.interpolate import interp1d
 import soundfile as sf
+from scipy.io import wavfile
 
 from uuid import uuid1
 
+import os
 
 # Dash app setup
 server = Flask(__name__)
@@ -97,12 +99,12 @@ CONTENT_STYLE1 = {
     "background-color": "var(--secondary-bg-color)",
 }
 
-
-# Initialize Pygame mixer
-pygame.mixer.init()
+def get_wav_data(filepath):
+    sample_rate, data = wavfile.read(filepath)
+    return data
 
 # Load the WAV files
-orig_sounds = [pygame.mixer.Sound(f"files/{i+1}.wav") for i in range(num_tracks)]
+orig_sounds = [get_wav_data(f"files/{i+1}.wav") for i in range(num_tracks)]
 
 def add_arrays(a, b):
     """
@@ -135,7 +137,7 @@ def add_arrays(a, b):
 
 def modify_sound(sound, pitch_factor, pan_factors, start_index):
     # load the sound into an array
-    orig_array = pygame.sndarray.array(sound)
+    orig_array = sound
     
     # Get a x second clip from the start index
     
@@ -468,5 +470,6 @@ def update_graph_live(data):
     )
     return fig
 
-if __name__ == "__main__":
-     app.run_server(debug=False, port = 8086)
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))  # Use the PORT environment variable value if available, else default to 5000
+    app.run_server(debug=False, host='0.0.0.0', port=port)

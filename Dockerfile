@@ -45,7 +45,7 @@ COPY assets assets
 COPY files files
 
 # Make port 8050 available to the world outside this container
-EXPOSE 8050
+EXPOSE 80
 
 # Run app.py when the container launches
 CMD ["python", "app.py"]
